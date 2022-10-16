@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: drinksfinder-network-policy
+  namespace: drinksfinder
+spec:
+  podSelector:
+    matchLabels:
+      role: data-access-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            role: apiserver
+      ports:
+      - protocol: TCP
+        port: 8080

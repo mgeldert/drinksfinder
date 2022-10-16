@@ -1,0 +1,106 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apiserver
+  namespace: drinksfinder
+  labels:
+    app: drinksfinder
+    role: apiserver
+spec:
+  externalTrafficPolicy: Local
+  selector:
+    role: apiserver
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apiserver-settings
+  namespace: drinksfinder
+  labels:
+    app: drinksfinder
+    role: apiserver
+data:
+  data_access_url: "http://data-access.drinksfinder.svc.cluster.local:8080/"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apiserver-deployment
+  namespace: drinksfinder
+  labels:
+    app: drinksfinder
+    role: apiserver
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: drinksfinder
+      role: apiserver
+  template:
+    metadata:
+      labels:
+        app: drinksfinder
+        role: apiserver
+    spec:
+      # Apply anti-affinity to keep pods on different nodes for HA
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: drinksfinder
+            role: apiserver
+
+      # Mount the Google API key (optional) as a volume as it's more secure
+      # than using an environment variable
+      volumes:
+      - name: google-api-key
+        secret:
+          secretName: drinksfinder-google-api-key
+          optional: true
+
+      containers:
+      - name: server
+        image: docker.io/matthewgeldert/drinksfinder-api-server:1.0
+        env:
+        - name: DATA_ACCESS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: apiserver-settings
+              key: data_access_url
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        livenessProbe:
+          initialDelaySeconds: 10
+          timeoutSeconds: 10
+          httpGet:
+            path: /live
+            port: 8080
+        readinessProbe:
+          timeoutSeconds: 10
+          httpGet:
+            path: /ready
+            port: 8080
+        resources:
+          limits:
+            memory: 50Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+        volumeMounts:
+        - name: google-api-key
+          mountPath: /settings
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
